@@ -6,6 +6,8 @@
 #include <sys/types.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
+#include "str_replace.h"
 
 #define RECEIVEBUFFER_SIZE 1E3
 #define SSDP_PORT 1900
@@ -63,6 +65,9 @@ int main(int argc, char** argv) {
     char* inside_nat_ip_address = argv[2];
     char* sonos_box_ip_address = argv[3];
 
+    char* to_replace = sonos_location_string(sonos_box_ip_address);
+    char* replace_with = sonos_location_string(outside_nat_ip_address);
+
     fill_socketaddr_in(&ssdp_socket_address, SSDP_PORT, SSDP_GROUP);
     fill_socketaddr_in(&forward_reply_socket_address, SSDP_PORT, outside_nat_ip_address);
 
@@ -97,19 +102,12 @@ int main(int argc, char** argv) {
             } else {
                 printf("received reply  (%d) from inside: \n%s\n\n", nr_bytes_received, receive_buffer);
                 char* mark;
-                char* to_replace = sonos_location_string(sonos_box_ip_address);
-                char* replace_with = sonos_location_string(outside_nat_ip_address);
                 if ((mark = strstr(receive_buffer, to_replace)) != NULL) {
-                    int send_buffer_size = nr_bytes_received - strlen(to_replace) + strlen(replace_with);
-                    char* send_buffer = malloc(send_buffer_size * sizeof(char));
-                    strncpy(send_buffer, receive_buffer, mark - receive_buffer);
-                    strcpy(send_buffer + (mark - receive_buffer), replace_with);
-                    mark += strlen(to_replace) - 1; //remove the terminating \0
-                    strcpy(send_buffer + (mark - receive_buffer) - strlen(to_replace) + strlen(replace_with), mark);
-
-                    //sendbuffer contains the rewriten package now
+                    int send_buffer_size = nr_bytes_received - strlen(to_replace) + strlen(replace_with) + 1;
+                    char* send_buffer = str_replace(receive_buffer, to_replace, replace_with);
                     printf("forwarding reply  (%d) from inside: \n%s\n\n", nr_bytes_received, send_buffer);
                     sendto(forward_reply_socket, send_buffer, send_buffer_size, 0, (struct sockaddr*) &remote_address, remote_address_length); 
+                    free(send_buffer);
                 } else {
                     printf("Message didn't match \"%s\"", to_replace);
                 }
