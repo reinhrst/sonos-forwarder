@@ -3,7 +3,7 @@
 #include <stdlib.h>
 
 // You must free the result if result is non-NULL.
-char *str_replace(const char *orig, const char *rep, const char *with) {
+char *str_replace(const char *orig, const char *rep, const char *with, unsigned int max_replacements) {
     char *result; // the return string
     const char *ins;    // the next insert point
     char *tmp;    // varies
@@ -17,6 +17,9 @@ char *str_replace(const char *orig, const char *rep, const char *with) {
     if (!rep)
         rep = "";
     len_rep = strlen(rep);
+    if (!len_rep) {
+        return NULL; //undefined, how can we replace nothing with something
+    }
     if (!with)
         with = "";
     len_with = strlen(with);
@@ -24,6 +27,10 @@ char *str_replace(const char *orig, const char *rep, const char *with) {
     ins = orig;
     for (count = 0; (tmp = strstr(ins, rep)); ++count) {
         ins = tmp + len_rep;
+    }
+
+    if (max_replacements != 0 && count > max_replacements) {
+        count = max_replacements;
     }
 
     // first time through the loop, all the variable are set correctly

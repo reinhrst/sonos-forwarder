@@ -133,7 +133,23 @@ int main(int argc, char** argv) {
             printf("strange, no request.... %s\n", strerror(errno));
             continue;
         }
-        char* send_buffer = str_replace(request, sonos_box_ip_address, outside_nat_ip_address);
+        char* send_buffer = str_replace(request, sonos_box_ip_address, outside_nat_ip_address, STR_REPLACE_REPLACE_ALL);
+        long lengthdifference = strlen(send_buffer) - strlen(request);
+        if (lengthdifference) {
+            //update the content-length header
+            int oldlength = get_content_length(send_buffer);
+            char* cl_start = strstr(send_buffer, CONTENT_LENGTH_LINE);
+            char* cl_end = strstr(cl_start + strlen(CONTENT_LENGTH_LINE), "\r\n");
+            char* replace_from = calloc(cl_end - cl_start + 1, sizeof(char));
+            strncpy(replace_from, cl_start, cl_end-cl_start);
+            char* replace_with;
+            asprintf(&replace_with, "%s %ld", CONTENT_LENGTH_LINE, oldlength + lengthdifference);
+            char* new_send_buffer = str_replace(send_buffer, replace_from, replace_with, 1);
+            free(replace_from);
+            free(replace_with);
+            free(send_buffer);
+            send_buffer = new_send_buffer;
+        }
         char* host = get_host(send_buffer);
         unsigned short port = get_port(send_buffer);
         fill_socketaddr_in(&forward_destination_address, port, host);

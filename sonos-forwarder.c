@@ -98,7 +98,7 @@ int main(int argc, char** argv) {
                 printf("no reply\n");
             } else {
                 int send_buffer_size = nr_bytes_received - strlen(to_replace) + strlen(replace_with) + 1;
-                char* send_buffer = str_replace(receive_buffer, to_replace, replace_with);
+                char* send_buffer = str_replace(receive_buffer, to_replace, replace_with, STR_REPLACE_REPLACE_ALL);
                 sendto(forward_reply_socket, send_buffer, send_buffer_size, 0, (struct sockaddr*) &remote_address, remote_address_length); 
                 free(send_buffer);
                 printf("Message %s <-- internal\n", inet_ntoa(remote_address.sin_addr));
