@@ -9,6 +9,8 @@
 #include <unistd.h>
 #include "str_replace.h"
 #include <errno.h>
+#include <syslog.h>
+
 
 #define NOTIFY_PORT 3400
 #define MAX_HEADERS_SIZE 10000
@@ -107,6 +109,8 @@ char* receive_http(int conn) {
 }
 
 int main(int argc, char** argv) {
+    openlog("sonos-n", LOG_PID|LOG_CONS, LOG_DAEMON);
+
     int notify_socket, forward_socket, sonos_connection;
     struct sockaddr_in notify_socket_address = {0}, forward_destination_address = {0}, sonos_box_address;
     socklen_t sonos_box_address_length=sizeof(sonos_box_address);
@@ -125,12 +129,13 @@ int main(int argc, char** argv) {
 
     listen(notify_socket, LISTEN_BACKLOG);
 
-    printf("waiting for connection\n");
+    syslog(LOG_DEBUG, "waiting for connection");
     while (1) {
         sonos_connection = accept(notify_socket, (struct sockaddr *)&sonos_box_address, &sonos_box_address_length);
         char* request = receive_http(sonos_connection);
         if (!request) {
-            printf("strange, no request.... %s\n", strerror(errno));
+            syslog(LOG_ERR, "strange, no request.... %s", strerror(errno));
+            sleep(10); // sleep a while to avoid flooding the log with these errors
             continue;
         }
         char* send_buffer = str_replace(request, sonos_box_ip_address, outside_nat_ip_address, STR_REPLACE_REPLACE_ALL);
@@ -156,16 +161,16 @@ int main(int argc, char** argv) {
         forward_socket = socket(AF_INET, SOCK_STREAM, 0);
         if (setsockopt(forward_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
             perror("Error");
+            exit(1);
         }
         connect(forward_socket, (struct sockaddr*) &forward_destination_address, sizeof(forward_destination_address));
-        printf("connection %s --> %s(%d): forwarding %ld bytes...", inet_ntoa(sonos_box_address.sin_addr), host, port, strlen(send_buffer));
         send(forward_socket, send_buffer, strlen(send_buffer), 0);
         char* response = receive_http(forward_socket);
         if (!response) {
-            printf("no response (%s)\n", strerror(errno));
+            syslog(LOG_NOTICE, "connection %s --> %s(%d): forwarding %ld bytes... no response (%s)", inet_ntoa(sonos_box_address.sin_addr), host, port, strlen(send_buffer), strerror(errno));
             continue;
         }
-        printf("replying %ld bytes\n", strlen(response));
+        syslog(LOG_DEBUG, "connection %s --> %s(%d): forwarding %ld bytes... replying %ld bytes", inet_ntoa(sonos_box_address.sin_addr), host, port, strlen(send_buffer), strlen(response));
         send(sonos_connection, response, strlen(response), 0);
         close(forward_socket);
         close(sonos_connection);

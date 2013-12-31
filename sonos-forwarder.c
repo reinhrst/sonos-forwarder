@@ -8,6 +8,7 @@
 #include <time.h>
 #include <unistd.h>
 #include "str_replace.h"
+#include <syslog.h>
 
 #define RECEIVEBUFFER_SIZE 1E3
 #define SSDP_PORT 1900
@@ -48,6 +49,7 @@ int create_bounded_socket(struct sockaddr_in sock_address) {
 }
 
 int main(int argc, char** argv) {
+    openlog("sonos-f", LOG_PID|LOG_CONS, LOG_DAEMON);
 
     int ssdp_socket, forward_reply_socket;
     struct sockaddr_in ssdp_socket_address = {0}, forward_reply_socket_address = {0};
@@ -85,26 +87,26 @@ int main(int argc, char** argv) {
         int nr_bytes_received;
         nr_bytes_received = recvfrom(ssdp_socket, receive_buffer, RECEIVEBUFFER_SIZE, 0, (struct sockaddr*)&remote_address, &remote_address_length);
         if(strstr(receive_buffer, "ZonePlayer") != NULL) {
-            printf("Message %s --> internal\n", inet_ntoa(remote_address.sin_addr));
             struct sockaddr_in passthrough_socket_address = {0};
             fill_socketaddr_in(&passthrough_socket_address, 0, inside_nat_ip_address);
             int passthrough_socket = create_bounded_socket(passthrough_socket_address);
             sendto(passthrough_socket, receive_buffer, nr_bytes_received, 0, (struct sockaddr*)&ssdp_socket_address, sizeof(ssdp_socket_address));
             if (setsockopt(passthrough_socket, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) < 0) {
                 perror("Error");
+                exit(1);
             }
             nr_bytes_received = recv(passthrough_socket, receive_buffer, RECEIVEBUFFER_SIZE, 0);
             if (nr_bytes_received <= 0) {
-                printf("no reply\n");
+                syslog(LOG_DEBUG, "Message %s --> internal", inet_ntoa(remote_address.sin_addr));
             } else {
                 int send_buffer_size = nr_bytes_received - strlen(to_replace) + strlen(replace_with) + 1;
                 char* send_buffer = str_replace(receive_buffer, to_replace, replace_with, STR_REPLACE_REPLACE_ALL);
                 sendto(forward_reply_socket, send_buffer, send_buffer_size, 0, (struct sockaddr*) &remote_address, remote_address_length); 
                 free(send_buffer);
-                printf("Message %s <-- internal\n", inet_ntoa(remote_address.sin_addr));
+                syslog(LOG_DEBUG, "Message %s <-> internal", inet_ntoa(remote_address.sin_addr));
             }
         } else {
-            printf("Message %s not routed\n", inet_ntoa(remote_address.sin_addr));
+            syslog(LOG_DEBUG, "Message %s not routed", inet_ntoa(remote_address.sin_addr));
         }
     }
 }
