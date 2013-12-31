@@ -51,8 +51,8 @@ int main(int argc, char** argv) {
 
     int ssdp_socket, forward_reply_socket;
     struct sockaddr_in ssdp_socket_address = {0}, forward_reply_socket_address = {0};
-    struct sockaddr remote_address;
-    socklen_t remote_address_length;
+    struct sockaddr_in remote_address;
+    socklen_t remote_address_length = sizeof(remote_address);
     char* receive_buffer=malloc(RECEIVEBUFFER_SIZE * sizeof(char));
     struct ip_mreq mreq;
     struct timeval timeout = {0, REPLY_TIMEOUT_USEC};
@@ -83,12 +83,9 @@ int main(int argc, char** argv) {
 
     while (1) {
         int nr_bytes_received;
-        printf("a\n");
-        nr_bytes_received = recvfrom(ssdp_socket, receive_buffer, RECEIVEBUFFER_SIZE, 0, &remote_address, &remote_address_length);
-        printf("received message from outside: \n%s\n\n", receive_buffer);
-
+        nr_bytes_received = recvfrom(ssdp_socket, receive_buffer, RECEIVEBUFFER_SIZE, 0, (struct sockaddr*)&remote_address, &remote_address_length);
         if(strstr(receive_buffer, "ZonePlayer") != NULL) {
-            printf("forwarding message\n");
+            printf("Message %s --> internal\n", inet_ntoa(remote_address.sin_addr));
             struct sockaddr_in passthrough_socket_address = {0};
             fill_socketaddr_in(&passthrough_socket_address, 0, inside_nat_ip_address);
             int passthrough_socket = create_bounded_socket(passthrough_socket_address);
@@ -100,18 +97,14 @@ int main(int argc, char** argv) {
             if (nr_bytes_received <= 0) {
                 printf("no reply\n");
             } else {
-                printf("received reply  (%d) from inside: \n%s\n\n", nr_bytes_received, receive_buffer);
-                char* mark;
-                if ((mark = strstr(receive_buffer, to_replace)) != NULL) {
-                    int send_buffer_size = nr_bytes_received - strlen(to_replace) + strlen(replace_with) + 1;
-                    char* send_buffer = str_replace(receive_buffer, to_replace, replace_with);
-                    printf("forwarding reply  (%d) from inside: \n%s\n\n", nr_bytes_received, send_buffer);
-                    sendto(forward_reply_socket, send_buffer, send_buffer_size, 0, (struct sockaddr*) &remote_address, remote_address_length); 
-                    free(send_buffer);
-                } else {
-                    printf("Message didn't match \"%s\"", to_replace);
-                }
+                int send_buffer_size = nr_bytes_received - strlen(to_replace) + strlen(replace_with) + 1;
+                char* send_buffer = str_replace(receive_buffer, to_replace, replace_with);
+                sendto(forward_reply_socket, send_buffer, send_buffer_size, 0, (struct sockaddr*) &remote_address, remote_address_length); 
+                free(send_buffer);
+                printf("Message %s <-- internal\n", inet_ntoa(remote_address.sin_addr));
             }
+        } else {
+            printf("Message %s not routed\n", inet_ntoa(remote_address.sin_addr));
         }
     }
 }
